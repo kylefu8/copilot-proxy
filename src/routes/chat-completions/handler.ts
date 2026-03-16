@@ -23,6 +23,7 @@ import {
 import { createResponses } from '~/services/copilot/create-responses'
 
 export async function handleCompletion(c: Context) {
+  const convStart = Date.now()
   await checkRateLimit(state)
 
   let payload = await validateBody<ChatCompletionsPayload>(c, ChatCompletionsPayloadSchema)
@@ -62,43 +63,83 @@ export async function handleCompletion(c: Context) {
   const backend = resolveBackend(payload.model, 'chat-completions')
 
   if (backend === 'responses') {
-    return handleViaResponses(c, payload)
+    return handleViaResponses(c, payload, convStart)
   }
 
   // Try chat-completions first; if unsupported, fall back to responses
   try {
-    return await handleViaChatCompletions(c, payload)
+    return await handleViaChatCompletions(c, payload, convStart)
   }
   catch (error) {
     if (error instanceof HTTPError && await isUnsupportedApiError(error.response)) {
       consola.info(`Model ${payload.model} does not support /chat/completions, falling back to /responses`)
       recordProbeResult(payload.model, 'chat-completions')
-      return handleViaResponses(c, payload)
+      return handleViaResponses(c, payload, convStart)
     }
     throw error
   }
 }
 
 /** Direct path: model supports chat-completions */
-async function handleViaChatCompletions(c: Context, payload: ChatCompletionsPayload) {
+async function handleViaChatCompletions(c: Context, payload: ChatCompletionsPayload, convStart?: number) {
   const response = await createChatCompletions(payload)
 
   if (isCCNonStreaming(response)) {
     consola.debug('Non-streaming response:', JSON.stringify(response))
+    if (isConversationLogEnabled() && convStart) {
+      emitConversation({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        endpoint: '/v1/chat/completions',
+        client: { type: detectClientType('/v1/chat/completions', undefined, c.req.header('user-agent')) },
+        model: payload.model,
+        stream: false,
+        request: { messages: payload.messages },
+        response: {
+          content: response.choices?.[0]?.message?.content,
+          toolCalls: response.choices?.[0]?.message?.tool_calls,
+          usage: response.usage,
+        },
+        durationMs: Date.now() - convStart,
+      })
+    }
     return c.json(response)
   }
 
   consola.debug('Streaming response')
   return streamSSE(c, async (stream) => {
+    const collector = isConversationLogEnabled() ? createStreamCollector() : null
     for await (const chunk of response) {
       consola.debug('Streaming chunk:', JSON.stringify(chunk))
+      if (collector && chunk.data) {
+        try {
+          const parsed = typeof chunk.data === 'string' ? JSON.parse(chunk.data) : chunk.data
+          const delta = parsed.choices?.[0]?.delta
+          if (delta?.content) collector.addText(delta.content)
+          if (delta?.tool_calls) for (const tc of delta.tool_calls) collector.addToolCall(tc)
+          if (parsed.usage) collector.setUsage(parsed.usage)
+        } catch { /* ignore parse errors in logging */ }
+      }
       await stream.writeSSE(chunk as SSEMessage)
+    }
+    if (collector && convStart) {
+      emitConversation({
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        endpoint: '/v1/chat/completions',
+        client: { type: detectClientType('/v1/chat/completions', undefined, c.req.header('user-agent')) },
+        model: payload.model,
+        stream: true,
+        request: { messages: payload.messages },
+        response: collector.getResult(),
+        durationMs: Date.now() - convStart,
+      })
     }
   })
 }
 
 /** Translation path: model only supports responses API, translate CC ↔ Responses */
-async function handleViaResponses(c: Context, payload: ChatCompletionsPayload) {
+async function handleViaResponses(c: Context, payload: ChatCompletionsPayload, convStart?: number) {
   const responsesPayload = translateCCRequestToResponses(payload)
   consola.debug('Translated CC→Responses payload:', JSON.stringify(responsesPayload).slice(-400))
 

@@ -9,6 +9,7 @@ import { streamSSE } from 'hono/streaming'
 import { isUnsupportedApiError, recordProbeResult } from '~/lib/api-probe'
 import { awaitApproval } from '~/lib/approval'
 import { HTTPError } from '~/lib/error'
+import { detectClientType, emitConversation, isConversationLogEnabled } from '~/lib/conversation-log'
 import { resolveBackend } from '~/lib/model-config'
 import { checkRateLimit } from '~/lib/rate-limit'
 import { ResponsesPayloadSchema } from '~/lib/schemas'
@@ -19,6 +20,7 @@ import { createChatCompletions } from '~/services/copilot/create-chat-completion
 import { createResponses, summarizeResponsesPayload } from '~/services/copilot/create-responses'
 
 export async function handleResponses(c: Context) {
+  const convStart = Date.now()
   await checkRateLimit(state)
 
   const payload = await validateBody<ResponsesPayload>(c, ResponsesPayloadSchema)
