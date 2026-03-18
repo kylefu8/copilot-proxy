@@ -15,9 +15,11 @@ import { modelRoutes } from './routes/models/route'
 import { responsesRoutes } from './routes/responses/route'
 import { tokenRoute } from './routes/token/route'
 import { usageRoute } from './routes/usage/route'
+import { conversationMiddleware } from './lib/conversation-middleware'
 
 export const server = new Hono()
 
+server.use(conversationMiddleware)
 server.use(logger())
 server.use(async (c, next) => {
   if (!isRequestHostAllowed(c.req.raw)) {
