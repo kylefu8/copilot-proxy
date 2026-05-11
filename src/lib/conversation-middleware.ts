@@ -173,11 +173,12 @@ export async function conversationMiddleware(c: Context, next: Next) {
 
   const startTime = Date.now()
 
-  // Clone request to read body without consuming it
+  // Clone the raw request to read body without consuming the original stream.
+  // v0.7.8+ reads the body via c.req.raw.body (bypassing Hono's json cache),
+  // so we must clone first to avoid exhausting the stream before the handler.
   let requestBody: any = null
   try {
-    requestBody = await c.req.json()
-    // Hono caches parsed JSON, so the handler will still get it
+    requestBody = await c.req.raw.clone().json()
   } catch { /* ignore */ }
 
   // Run the actual handler
