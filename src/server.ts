@@ -6,6 +6,7 @@ import { cors } from 'hono/cors'
 
 import { NATIVE_SERVICE_INSTANCE_HEADER } from '~/daemon/native-service'
 import { withApprovalRequestContext } from '~/lib/approval'
+import { conversationMiddleware } from '~/lib/conversation-middleware'
 import { requestLogger } from '~/lib/request-logger'
 import { isRequestHostAllowed, isRequestOriginAllowed, resolveCorsOrigin } from '~/lib/security'
 import { state } from '~/lib/state'
@@ -19,7 +20,6 @@ import { modelRoutes } from './routes/models/route'
 import { responsesRoutes } from './routes/responses/route'
 import { tokenRoute } from './routes/token/route'
 import { usageRoute } from './routes/usage/route'
-import { conversationMiddleware } from './lib/conversation-middleware'
 
 export const server = new Hono<CopilotProxyEnv>()
 
