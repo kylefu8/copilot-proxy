@@ -4,6 +4,7 @@ import { logger } from 'hono/logger'
 
 import { NATIVE_SERVICE_INSTANCE_HEADER } from '~/daemon/native-service'
 import { withApprovalRequestContext } from '~/lib/approval'
+import { conversationMiddleware } from '~/lib/conversation-middleware'
 import { isRequestHostAllowed, isRequestOriginAllowed, resolveCorsOrigin } from '~/lib/security'
 import { state } from '~/lib/state'
 
@@ -15,8 +16,6 @@ import { modelRoutes } from './routes/models/route'
 import { responsesRoutes } from './routes/responses/route'
 import { tokenRoute } from './routes/token/route'
 import { usageRoute } from './routes/usage/route'
-import { conversationMiddleware } from './lib/conversation-middleware'
-
 export const server = new Hono()
 
 server.use(conversationMiddleware)
